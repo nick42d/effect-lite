@@ -1,0 +1,12 @@
+[package]
+name = "effect-light"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+futures = { version = "0.3.32", default-features = false }
+
+[features]
+default = []
+futures = []
+std = []
