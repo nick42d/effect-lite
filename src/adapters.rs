@@ -1,20 +1,17 @@
-use crate::Effect;
-use futures::{future::Either, stream::select, Stream, StreamExt};
+use crate::{either::Either, Effect};
 
 pub trait EffectExt<D>: Effect<D> {
     /// Map the output of an effect.
     /// ```
-    /// let x = Once("Hello, world!");
-    /// let y = MapOutput {
-    ///     effect: x,
-    ///     map_fn: |s| s.to_ascii_lowercase()
-    /// };
-    /// assert_eq!(y.into_stream(()).next().await, "hello, world!");
+    /// use effect_light::{Effect, EffectExt};
+    ///
+    /// let x = effect_light::value("Hello, world!").map_output(|s: &str| s.to_ascii_lowercase());
+    /// assert_eq!(x.resolve(()), "hello, world!");
     /// ```
     fn map_output<T, F>(self, map_fn: F) -> MapOutput<Self, F>
     where
         Self: Sized,
-        F: FnMut(Self::Output) -> T,
+        F: Fn(Self::Output) -> T,
     {
         MapOutput {
             effect: self,
@@ -23,12 +20,12 @@ pub trait EffectExt<D>: Effect<D> {
     }
     /// Map the output of an effect (async closure support)
     /// ```
-    /// let x = Once("Hello, world!");
-    /// let y = MapOutput {
-    ///     effect: x,
-    ///     map_fn: |s| s.to_ascii_lowercase()
-    /// };
-    /// assert_eq!(y.into_stream(()).next().await, "hello, world!");
+    /// use effect_light::{Effect, EffectExt};
+    ///
+    /// # futures::executor::block_on(async {
+    /// let x = effect_light::value("Hello, world!").map_output_async(async |s| s.to_ascii_lowercase());
+    /// assert_eq!(x.resolve(()).await, "hello, world!");
+    /// # })
     /// ```
     fn map_output_async<T, F, Fut>(self, map_fn: F) -> MapOutput<Self, F>
     where
@@ -41,6 +38,13 @@ pub trait EffectExt<D>: Effect<D> {
             map_fn,
         }
     }
+    /// Map the dependency of an effect.
+    /// ```
+    /// use effect_light::{Effect, EffectExt};
+    ///
+    /// let x = effect_light::echo::<String>().map_dependency(|s: &str| s.to_string());
+    /// assert_eq!(x.resolve("Hello, world!"), String::from("Hello, world!"));
+    /// ```
     fn map_dependency<D2, F>(self, map_fn: F) -> MapDependency<Self, F>
     where
         Self: Sized,
@@ -52,9 +56,15 @@ pub trait EffectExt<D>: Effect<D> {
         }
     }
     /// Merge two effects.
+    /// ```
+    /// use effect_light::{Effect, EffectExt};
+    ///
+    /// let x = effect_light::fn_effect(|s: &str| s.to_ascii_lowercase());
+    /// let y = effect_light::fn_effect(|s: &str| s.to_ascii_uppercase());
+    /// assert_eq!(x.merge(y).resolve(("Hello","world")), ("hello".to_string(),"WORLD".to_string()));
+    /// ```
     /// # Resolution note
     /// The first effect is resolved first.
-    // TODO: how to swap resolution order...
     fn merge<E2, D2>(self, other: E2) -> Merge<Self, E2>
     where
         Self: Sized,
@@ -65,7 +75,45 @@ pub trait EffectExt<D>: Effect<D> {
             effect_2: other,
         }
     }
+    /// Helper function to wrap in the left side of a [crate::either::Either]
+    /// ```
+    /// use effect_light::EffectExt;
+    ///
+    /// fn diverges(x: bool) -> impl effect_light::Effect<()> {
+    ///     match x {
+    ///         true => effect_light::fn_effect(|_| "Hello").to_left(),
+    ///         false => effect_light::fn_effect(|_| "World!").to_right(),
+    ///     }
+    /// }
+    /// ```
+    fn to_left<R>(self) -> Either<Self, R>
+    where
+        Self: Sized,
+        R: Effect<D, Output = Self::Output>,
+    {
+        Either::Left(self)
+    }
+    /// Helper function to wrap in the right side of a [crate::either::Either]
+    /// ```
+    /// use effect_light::EffectExt;
+    ///
+    /// fn diverges(x: bool) -> impl effect_light::Effect<()> {
+    ///     match x {
+    ///         true => effect_light::fn_effect(|_| "Hello").to_left(),
+    ///         false => effect_light::fn_effect(|_| "World!").to_right(),
+    ///     }
+    /// }
+    /// ```
+    fn to_right<L>(self) -> Either<L, Self>
+    where
+        Self: Sized,
+        L: Effect<D, Output = Self::Output>,
+    {
+        Either::Right(self)
+    }
 }
+
+impl<D, T> EffectExt<D> for T where T: Effect<D> {}
 
 /// Map the output of an Effect.
 pub struct MapOutput<E, F> {
@@ -85,6 +133,7 @@ where
     }
 }
 
+/// Map the dependency of an Effect.
 pub struct MapDependency<E, F> {
     effect: E,
     map_fn: F,
@@ -102,6 +151,7 @@ where
     }
 }
 
+/// Merge two effects.
 pub struct Merge<E1, E2> {
     effect_1: E1,
     effect_2: E2,
