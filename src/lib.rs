@@ -108,7 +108,7 @@
 //!         content: String
 //!     }
 //!     impl Component {
-//!         pub fn update_content() -> impl effect_light::EffectAsync<(&mut Self, &reqwest::Client), OutputAsync=()> + 'static {
+//!         pub fn update_content<'a>() -> impl effect_light::EffectAsync<(&'a mut Self, &'a reqwest::Client), OutputAsync=()> {
 //!             // ...but we can provide parent module an Effect that grants the required access.
 //!             effect_light::fn_effect_async(|(this, client): (&mut Self, &reqwest::Client)| async move {
 //!                 let output = client.get("https://www.google.com").send().await.unwrap().text().await.unwrap();
