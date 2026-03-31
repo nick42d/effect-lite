@@ -110,7 +110,7 @@
 //!     impl Component {
 //!         pub fn update_content<'a>() -> impl effect_light::EffectAsync<(&'a mut Self, &'a reqwest::Client), OutputAsync=()> {
 //!             // ...but we can provide parent module an Effect that grants the required access.
-//!             effect_light::fn_effect_async(|(this, client): (&mut Self, &reqwest::Client)| async move {
+//!             effect_light::fn_effect_async(async move |(this, client): (&mut Self, &reqwest::Client)| {
 //!                 let output = client.get("https://www.google.com").send().await.unwrap().text().await.unwrap();
 //!                 this.content = output;
 //!             })
@@ -141,7 +141,6 @@ pub mod async_effect {
     pub trait EffectAsync<D>: Effect<D, Output = Self::OutputFut> {
         type OutputFut: Future<Output = Self::OutputAsync>;
         type OutputAsync;
-        fn resolve_async(self, dependency: D) -> impl Future<Output = Self::OutputAsync>;
     }
     impl<T, D, O> EffectAsync<D> for T
     where
@@ -150,8 +149,66 @@ pub mod async_effect {
     {
         type OutputFut = T::Output;
         type OutputAsync = O;
-        fn resolve_async(self, dependency: D) -> impl Future<Output = Self::OutputAsync> {
-            Effect::resolve(self, dependency)
+    }
+    impl<D, T> EffectAsyncExt<D> for T where T: EffectAsync<D> {}
+    pub trait EffectAsyncExt<D>: EffectAsync<D> {
+        #[cfg(feature = "futures")]
+        fn map_async_output_async<F, Fut, T>(self, map_fn: F) -> MapAsyncOutputAsync<Self, F>
+        where
+            Self: Sized,
+            F: Fn(Self::OutputAsync) -> Fut,
+            Fut: Future<Output = T>,
+        {
+            MapAsyncOutputAsync {
+                effect: self,
+                map_fn,
+            }
+        }
+        #[cfg(feature = "futures")]
+        fn map_async_output<F, Fut, T>(self, map_fn: F) -> MapAsyncOutput<Self, F>
+        where
+            Self: Sized,
+            F: Fn(Self::OutputAsync) -> T,
+        {
+            MapAsyncOutput {
+                effect: self,
+                map_fn,
+            }
+        }
+    }
+    #[cfg(feature = "futures")]
+    pub struct MapAsyncOutputAsync<E, F> {
+        effect: E,
+        map_fn: F,
+    }
+    #[cfg(feature = "futures")]
+    impl<D, E, F, Fut, T> Effect<D> for MapAsyncOutputAsync<E, F>
+    where
+        E: EffectAsync<D>,
+        F: Fn(E::OutputAsync) -> Fut,
+        Fut: Future<Output = T>,
+    {
+        type Output = futures::future::Map<E::Output, F>;
+        fn resolve(self, dependency: D) -> Self::Output {
+            let Self { effect, map_fn } = self;
+            futures::FutureExt::map(effect.resolve(dependency), map_fn)
+        }
+    }
+    #[cfg(feature = "futures")]
+    pub struct MapAsyncOutput<E, F> {
+        effect: E,
+        map_fn: F,
+    }
+    #[cfg(feature = "futures")]
+    impl<D, E, F, T> Effect<D> for MapAsyncOutput<E, F>
+    where
+        E: EffectAsync<D>,
+        F: Fn(E::OutputAsync) -> T,
+    {
+        type Output = futures::future::Map<E::Output, F>;
+        fn resolve(self, dependency: D) -> Self::Output {
+            let Self { effect, map_fn } = self;
+            futures::FutureExt::map(effect.resolve(dependency), map_fn)
         }
     }
 }
@@ -161,7 +218,7 @@ pub trait Effect<D> {
     fn resolve(self, dependency: D) -> Self::Output;
 }
 
-/// Effect that produces no output and has no side effects.
+/// Effect for the [none()] method.
 pub struct None();
 /// Effect that produces no output and has no side effects.
 /// ```
@@ -212,9 +269,9 @@ pub struct AsyncFnEffect<T>(T);
 /// ```
 /// use effect_light::Effect;
 ///
-/// let x = effect_light::fn_effect(|t: &mut Vec<_>| t.pop());
+/// let x = effect_light::fn_effect_async(async |t: &mut Vec<_>| t.pop());
 /// let mut y = vec![1,2,3];
-/// assert_eq!(x.resolve(&mut y), Some(3));
+/// assert_eq!(futures::executor::block_on(x.resolve(&mut y)), Some(3));
 /// assert_eq!(y, vec![1,2]);
 /// ```
 pub fn fn_effect_async<F, Fut, D, T>(f: F) -> AsyncFnEffect<F>
