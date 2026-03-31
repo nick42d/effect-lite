@@ -95,7 +95,7 @@
 //! ### Module-level access control
 //! // An effect that requires access to an inaccessible application state
 //! ```
-//! use effect_light::{Effect, EffectExt};
+//! use effect_light::{Effect, EffectAsync, EffectExt};
 //!
 //! #[derive(Default)]
 //! struct AppState {
@@ -108,7 +108,7 @@
 //!         content: String
 //!     }
 //!     impl Component {
-//!         pub fn update_content<'a>() -> impl effect_light::Effect<(&'a mut Self, &'a reqwest::Client), Output=impl Future<Output = ()>>  {
+//!         pub fn update_content() -> impl effect_light::EffectAsync<(&mut Self, &reqwest::Client), OutputAsync=()> + 'static {
 //!             // ...but we can provide parent module an Effect that grants the required access.
 //!             effect_light::fn_effect_async(|(this, client): (&mut Self, &reqwest::Client)| async move {
 //!                 let output = client.get("https://www.google.com").send().await.unwrap().text().await.unwrap();
@@ -131,9 +131,30 @@
 //! ```
 
 pub use adapters::EffectExt;
+pub use async_effect::EffectAsync;
 
 pub mod adapters;
 pub mod either;
+pub mod async_effect {
+    use crate::Effect;
+
+    pub trait EffectAsync<D>: Effect<D, Output = Self::OutputFut> {
+        type OutputFut: Future<Output = Self::OutputAsync>;
+        type OutputAsync;
+        fn resolve_async(self, dependency: D) -> impl Future<Output = Self::OutputAsync>;
+    }
+    impl<T, D, O> EffectAsync<D> for T
+    where
+        T: crate::Effect<D>,
+        T::Output: Future<Output = O>,
+    {
+        type OutputFut = T::Output;
+        type OutputAsync = O;
+        fn resolve_async(self, dependency: D) -> impl Future<Output = Self::OutputAsync> {
+            Effect::resolve(self, dependency)
+        }
+    }
+}
 
 pub trait Effect<D> {
     type Output;
