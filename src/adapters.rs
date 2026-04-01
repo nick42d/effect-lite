@@ -75,6 +75,24 @@ pub trait EffectExt<D>: Effect<D> {
             effect_2: other,
         }
     }
+    fn flatten(self) -> Flatten<Self>
+    where
+        Self: Sized,
+    {
+        todo!()
+    }
+    fn collapse(self) -> Collapse<Self>
+    where
+        Self: Sized,
+    {
+        todo!()
+    }
+    fn flat_collapse(self) -> FlatCollapse<Self>
+    where
+        Self: Sized,
+    {
+        todo!()
+    }
     /// Helper function to wrap in the left side of a [crate::either::Either]
     /// ```
     /// use effect_light::EffectExt;
@@ -116,6 +134,7 @@ pub trait EffectExt<D>: Effect<D> {
 impl<D, T> EffectExt<D> for T where T: Effect<D> {}
 
 /// Map the output of an Effect.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct MapOutput<E, F> {
     effect: E,
     map_fn: F,
@@ -134,6 +153,7 @@ where
 }
 
 /// Map the dependency of an Effect.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct MapDependency<E, F> {
     effect: E,
     map_fn: F,
@@ -152,6 +172,7 @@ where
 }
 
 /// Merge two effects.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Merge<E1, E2> {
     effect_1: E1,
     effect_2: E2,
@@ -167,5 +188,52 @@ where
         let Self { effect_1, effect_2 } = self;
         let (d1, d2) = dependency;
         (effect_1.resolve(d1), effect_2.resolve(d2))
+    }
+}
+
+/// Flatten an effect returning an effect into a single effect
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct Flatten<E1>(E1);
+
+impl<D1, D2, E1, E2> Effect<(D1, D2)> for Flatten<E1>
+where
+    E1: Effect<D1, Output = E2>,
+    E2: Effect<D2>,
+{
+    type Output = E2::Output;
+    fn resolve(self, dependency: (D1, D2)) -> Self::Output {
+        let (d1, d2) = dependency;
+        self.0.resolve(d1).resolve(d2)
+    }
+}
+
+/// Flatten an effect returning an effect into a single effect
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct Collapse<E>(E);
+
+impl<D, E> Effect<D> for Collapse<E>
+where
+    E: Effect<(D, D)>,
+    D: Clone,
+{
+    type Output = E::Output;
+    fn resolve(self, dependency: D) -> Self::Output {
+        self.0.resolve((dependency.clone(), dependency))
+    }
+}
+
+/// Flatten an effect returning an effect (with the same dependency) into a single effect
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct FlatCollapse<E1>(E1);
+
+impl<D, E1, E2> Effect<D> for FlatCollapse<E1>
+where
+    D: Clone,
+    E1: Effect<D, Output = E2>,
+    E2: Effect<D>,
+{
+    type Output = E2::Output;
+    fn resolve(self, dependency: D) -> Self::Output {
+        self.0.resolve(dependency.clone()).resolve(dependency)
     }
 }

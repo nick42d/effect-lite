@@ -38,6 +38,7 @@ pub trait EffectAsyncExt<D>: EffectAsync<D> {
         }
     }
 }
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 #[cfg(feature = "futures")]
 pub struct MapAsyncOutputAsync<E, F> {
     effect: E,
@@ -56,6 +57,7 @@ where
         futures::FutureExt::map(effect.resolve(dependency), map_fn)
     }
 }
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 #[cfg(feature = "futures")]
 pub struct MapAsyncOutput<E, F> {
     effect: E,

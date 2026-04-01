@@ -144,6 +144,7 @@ pub trait Effect<D> {
 }
 
 /// Effect for the [none()] method.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct None();
 /// Effect that produces no output and has no side effects.
 /// ```
@@ -162,6 +163,7 @@ impl<D> Effect<D> for None {
 }
 
 /// An effect built from a closure.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct FnEffect<T>(T);
 /// An effect built from a closure.
 /// ```
@@ -189,6 +191,7 @@ where
 }
 
 /// An effect built from an async closure.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct AsyncFnEffect<T>(T);
 /// An effect built from an async closure.
 /// ```
@@ -218,6 +221,7 @@ where
 }
 
 /// Basic Effect returning the contained value immediately.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Value<T>(T);
 /// Basic Effect returning the contained value immediately.
 /// ```
@@ -237,6 +241,7 @@ impl<T> Effect<()> for Value<T> {
 }
 
 /// Basic Effect returning the contained value asynchronously.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct AsyncValue<T>(T);
 /// Basic Effect returning the contained value asynchronously.
 /// ```
@@ -270,6 +275,7 @@ where
 /// let x = effect_light::echo();
 /// assert_eq!(x.resolve("Hello, world!"), "Hello, world!");
 /// ```
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Echo<D>(core::marker::PhantomData<D>);
 pub fn echo<D>() -> Echo<D> {
     Echo(core::marker::PhantomData)
