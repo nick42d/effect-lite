@@ -93,6 +93,18 @@ pub trait EffectExt<D>: Effect<D> {
     {
         todo!()
     }
+    fn provide_left<D1>(self, dependency: D1) -> ProvideLeft<Self, D1>
+    where
+        Self: Sized,
+    {
+        todo!()
+    }
+    fn provide_right<D2>(self, dependency: D2) -> ProvideLeft<Self, D2>
+    where
+        Self: Sized,
+    {
+        todo!()
+    }
     /// Helper function to wrap in the left side of a [crate::either::Either]
     /// ```
     /// use effect_light::EffectExt;
@@ -235,5 +247,39 @@ where
     type Output = E2::Output;
     fn resolve(self, dependency: D) -> Self::Output {
         self.0.resolve(dependency.clone()).resolve(dependency)
+    }
+}
+
+/// Provide the left dependency of an effect with a 2-tuple dependency.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct ProvideLeft<E, D> {
+    effect: E,
+    left_dependency: D,
+}
+
+impl<D1, D2, E> Effect<D2> for ProvideLeft<E, D1>
+where
+    E: Effect<(D1, D2)>,
+{
+    type Output = E::Output;
+    fn resolve(self, dependency: D2) -> Self::Output {
+        self.effect.resolve((self.left_dependency, dependency))
+    }
+}
+
+/// Provide the right dependency of an effect with a 2-tuple dependency.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct ProvideRight<E, D> {
+    effect: E,
+    right_dependency: D,
+}
+
+impl<D1, D2, E> Effect<D1> for ProvideRight<E, D2>
+where
+    E: Effect<(D1, D2)>,
+{
+    type Output = E::Output;
+    fn resolve(self, dependency: D1) -> Self::Output {
+        self.effect.resolve((dependency, self.right_dependency))
     }
 }
