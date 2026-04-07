@@ -1,3 +1,5 @@
+use core::ops::{Deref, DerefMut};
+
 use crate::{either::Either, Effect};
 
 pub trait EffectExt<D>: Effect<D> {
@@ -75,35 +77,63 @@ pub trait EffectExt<D>: Effect<D> {
             effect_2: other,
         }
     }
-    fn flatten(self) -> Flatten<Self>
+    /// Flatten an effect returning an optional effect into a single effect returning an optional
+    fn flatten_option<E2, D2>(self) -> FlattenOption<Self>
     where
         Self: Sized,
+        Self: Effect<D, Output = Option<E2>>,
+        E2: Effect<D2>,
     {
-        todo!()
+        FlattenOption(self)
     }
-    fn collapse(self) -> Collapse<Self>
+    /// Flatten an effect returning an effect into a single effect
+    fn flatten<E2, D2>(self) -> Flatten<Self>
     where
         Self: Sized,
+        Self: Effect<D, Output = E2>,
+        E2: Effect<D2>,
     {
-        todo!()
+        Flatten(self)
     }
-    fn flat_collapse(self) -> FlatCollapse<Self>
+    /// Flatten an effect returning an effect into a single effect
+    fn collapse<D2>(self) -> Collapse<Self>
     where
         Self: Sized,
+        Self: Effect<(D2, D2)>,
+        D2: Clone,
     {
-        todo!()
+        Collapse(self)
     }
-    fn provide_left<D1>(self, dependency: D1) -> ProvideLeft<Self, D1>
+    /// Flatten an effect returning an effect (with the same dependency) into a single effect
+    fn flat_collapse<E2>(self) -> FlatCollapse<Self>
     where
         Self: Sized,
+        Self: Effect<D, Output = E2>,
+        E2: Effect<D>,
     {
-        todo!()
+        FlatCollapse(self)
     }
-    fn provide_right<D2>(self, dependency: D2) -> ProvideLeft<Self, D2>
+    /// Provide the left dependency of an effect with a 2-tuple dependency.
+    fn provide_left<D1, D2>(self, left_dependency: D1) -> ProvideLeft<Self, D1>
     where
         Self: Sized,
+        Self: Effect<(D1, D2)>,
     {
-        todo!()
+        ProvideLeft {
+            effect: self,
+            left_dependency,
+        }
+    }
+    /// Provide the right dependency of an effect with a 2-tuple dependency.
+    fn provide_right<D1, D2>(self, right_dependency: D2) -> ProvideRight<Self, D2>
+    where
+        Self: Sized,
+        Self: Effect<(D1, D2)>,
+    {
+        ProvideRight {
+            effect: self,
+            right_dependency,
+        }
     }
     /// Helper function to wrap in the left side of a [crate::either::Either]
     /// ```
@@ -143,6 +173,28 @@ pub trait EffectExt<D>: Effect<D> {
     }
 }
 
+pub trait EffectExt2<'a, D>: Effect<&'a mut D>
+where
+    D: 'a,
+{
+    /// Flatten an effect returning an effect (with the same dependency) into a single effect, where the dependency is a mutable reference
+    fn flat_collapse_mut<E2>(self) -> FlatCollapseMut<Self>
+    where
+        Self: Sized,
+        Self: Effect<&'a mut D, Output = E2>,
+        E2: for<'b> Effect<&'b mut D>,
+        <E2 as Effect<&'a mut D>>::Output: 'static,
+    {
+        FlatCollapseMut(self)
+    }
+}
+
+impl<'a, D, T> EffectExt2<'a, D> for T
+where
+    T: Effect<&'a mut D>,
+    D: 'a,
+{
+}
 impl<D, T> EffectExt<D> for T where T: Effect<D> {}
 
 /// Map the output of an Effect.
@@ -203,6 +255,22 @@ where
     }
 }
 
+/// Flatten an effect returning an optional effect into a single effect returning an optional
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct FlattenOption<E1>(E1);
+
+impl<D1, D2, E1, E2> Effect<(D1, D2)> for FlattenOption<E1>
+where
+    E1: Effect<D1, Output = Option<E2>>,
+    E2: Effect<D2>,
+{
+    type Output = Option<E2::Output>;
+    fn resolve(self, dependency: (D1, D2)) -> Self::Output {
+        let (d1, d2) = dependency;
+        self.0.resolve(d1).map(|e| e.resolve(d2))
+    }
+}
+
 /// Flatten an effect returning an effect into a single effect
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Flatten<E1>(E1);
@@ -247,6 +315,22 @@ where
     type Output = E2::Output;
     fn resolve(self, dependency: D) -> Self::Output {
         self.0.resolve(dependency.clone()).resolve(dependency)
+    }
+}
+
+/// Flatten an effect returning an effect (with the same dependency) into a single effect, where the dependency is a mutable reference.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct FlatCollapseMut<E1>(E1);
+
+impl<'a, D, E1, E2> Effect<&'a mut D> for FlatCollapseMut<E1>
+where
+    E1: for<'b> Effect<&'b mut D, Output = E2>,
+    E2: for<'b> Effect<&'b mut D>,
+    <E2 as Effect<&'a mut D>>::Output: 'static,
+{
+    type Output = <E2 as Effect<&'a mut D>>::Output;
+    fn resolve(self, dependency: &'a mut D) -> Self::Output {
+        self.0.resolve(dependency).resolve(dependency)
     }
 }
 
