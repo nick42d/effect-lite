@@ -178,14 +178,42 @@ where
     D: 'a,
 {
     /// Flatten an effect returning an effect (with the same dependency) into a single effect, where the dependency is a mutable reference
+    /// ```
+    /// use effect_light::adapters::EffectExt2;
+    /// use effect_light::Effect;
+    ///
+    /// let x = effect_light::fn_effect(move |s: &mut String| {
+    ///     s.push_str("a");
+    ///     effect_light::fn_effect(move |s: &mut String| s.push_str("a"))
+    /// });
+    /// let mut s = "Hello".to_string();
+    /// let _ = x.flat_collapse_mut().resolve(&mut s);
+    /// assert_eq!(&s, "Helloaa");
+    /// ```
     fn flat_collapse_mut<E2>(self) -> FlatCollapseMut<Self>
     where
         Self: Sized,
         Self: Effect<&'a mut D, Output = E2>,
-        E2: for<'b> Effect<&'b mut D>,
+        Self: for<'b> Effect<&'b mut D>,
         <E2 as Effect<&'a mut D>>::Output: 'static,
     {
         FlatCollapseMut(self)
+    }
+}
+
+/// Flatten an effect returning an effect (with the same dependency) into a single effect, where the dependency is a mutable reference.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct FlatCollapseMut<E1>(E1);
+
+impl<'a, D, E1, E2> Effect<&'a mut D> for FlatCollapseMut<E1>
+where
+    E1: for<'b> Effect<&'b mut D, Output = E2>,
+    E2: for<'b> Effect<&'b mut D>,
+    <E2 as Effect<&'a mut D>>::Output: 'static,
+{
+    type Output = <E2 as Effect<&'a mut D>>::Output;
+    fn resolve(self, dependency: &'a mut D) -> Self::Output {
+        self.0.resolve(dependency).resolve(dependency)
     }
 }
 
@@ -315,22 +343,6 @@ where
     type Output = E2::Output;
     fn resolve(self, dependency: D) -> Self::Output {
         self.0.resolve(dependency.clone()).resolve(dependency)
-    }
-}
-
-/// Flatten an effect returning an effect (with the same dependency) into a single effect, where the dependency is a mutable reference.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct FlatCollapseMut<E1>(E1);
-
-impl<'a, D, E1, E2> Effect<&'a mut D> for FlatCollapseMut<E1>
-where
-    E1: for<'b> Effect<&'b mut D, Output = E2>,
-    E2: for<'b> Effect<&'b mut D>,
-    <E2 as Effect<&'a mut D>>::Output: 'static,
-{
-    type Output = <E2 as Effect<&'a mut D>>::Output;
-    fn resolve(self, dependency: &'a mut D) -> Self::Output {
-        self.0.resolve(dependency).resolve(dependency)
     }
 }
 
