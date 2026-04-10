@@ -173,10 +173,7 @@ pub trait EffectExt<D>: Effect<D> {
     }
 }
 
-pub trait EffectExt2<'a, D>: Effect<&'a mut D>
-where
-    D: 'a,
-{
+pub trait EffectExt2<D>: for<'a> Effect<&'a mut D> {
     /// Flatten an effect returning an effect (with the same dependency) into a single effect, where the dependency is a mutable reference
     /// ```
     /// use effect_light::adapters::EffectExt2;
@@ -193,9 +190,9 @@ where
     fn flat_collapse_mut<E2>(self) -> FlatCollapseMut<Self>
     where
         Self: Sized,
-        Self: Effect<&'a mut D, Output = E2>,
-        Self: for<'b> Effect<&'b mut D>,
-        <E2 as Effect<&'a mut D>>::Output: 'static,
+        Self: for<'b> Effect<&'b mut D, Output = E2>,
+        E2: for<'b> Effect<&'b mut D>,
+        for<'a> <E2 as Effect<&'a mut D>>::Output: 'static,
     {
         FlatCollapseMut(self)
     }
@@ -217,12 +214,7 @@ where
     }
 }
 
-impl<'a, D, T> EffectExt2<'a, D> for T
-where
-    T: Effect<&'a mut D>,
-    D: 'a,
-{
-}
+impl<D, T> EffectExt2<D> for T where T: for<'a> Effect<&'a mut D> {}
 impl<D, T> EffectExt<D> for T where T: Effect<D> {}
 
 /// Map the output of an Effect.
