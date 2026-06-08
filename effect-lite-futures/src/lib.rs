@@ -40,6 +40,21 @@ pub trait EffectAsyncExt<D>: EffectAsync<D> {
     {
         IntoStream(self)
     }
+    /// # Example
+    /// ```
+    /// let effect_a = fn_effect_async(|a: String| async { a });
+    /// let effect_b = fn_effect_async(|a: String| todo!());
+    /// ```
+    fn then<E>(self, next_effect: E) -> Then<Self, E>
+    where
+        Self: Sized,
+        E: Effect<Self::FutureOutput>,
+    {
+        Then {
+            first_effect: self,
+            next_effect,
+        }
+    }
 }
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct IntoStream<E>(E);
