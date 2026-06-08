@@ -47,16 +47,16 @@ pub trait EffectAsyncExt<D>: EffectAsync<D> {
     ///
     /// let effect_a = effect_lite::fn_effect_async(|a: String| async { a });
     /// let effect_b = effect_lite::fn_effect(|a: String| format!("{a}{a}"));
-    /// let combined = effect_a.then(effect_b);
+    /// let combined = effect_a.async_then(effect_b);
     /// let string = format!("Hello");
     /// assert_eq!(futures::executor::block_on(combined.resolve(string)), format!("HelloHello"));
     /// ```
-    fn then<E>(self, next_effect: E) -> Then<Self, E>
+    fn async_then<E>(self, next_effect: E) -> AsyncThen<Self, E>
     where
         Self: Sized,
         E: Effect<Self::FutureOutput>,
     {
-        Then {
+        AsyncThen {
             first_effect: self,
             next_effect,
         }
@@ -110,12 +110,12 @@ where
 
 /// Map the output of an Effect.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct Then<E1, E2> {
+pub struct AsyncThen<E1, E2> {
     first_effect: E1,
     next_effect: E2,
 }
 
-impl<E1, E2, D> Effect<D> for Then<E1, E2>
+impl<E1, E2, D> Effect<D> for AsyncThen<E1, E2>
 where
     E1: EffectAsync<D>,
     E2: Effect<E1::FutureOutput>,
