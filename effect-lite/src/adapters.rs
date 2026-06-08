@@ -95,7 +95,7 @@ pub trait EffectExt<D>: Effect<D> {
     {
         Flatten(self)
     }
-    /// Flatten an effect returning an effect into a single effect
+    /// Collapse a duplicate cloneable dependency to a single dependency.
     fn collapse<D2>(self) -> Collapse<Self>
     where
         Self: Sized,
@@ -112,6 +112,16 @@ pub trait EffectExt<D>: Effect<D> {
         E2: Effect<D>,
     {
         FlatCollapse(self)
+    }
+    /// Provide the dependency of an effect.
+    fn provide(self, dependency: D) -> Provide<Self, D>
+    where
+        Self: Sized,
+    {
+        Provide {
+            effect: self,
+            dependency,
+        }
     }
     /// Provide the left dependency of an effect with a 2-tuple dependency.
     fn provide_left<D1, D2>(self, left_dependency: D1) -> ProvideLeft<Self, D1>
@@ -307,7 +317,7 @@ where
     }
 }
 
-/// Flatten an effect returning an effect into a single effect
+/// Collapse a duplicate cloneable dependency to a single dependency.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Collapse<E>(E);
 
@@ -335,6 +345,23 @@ where
     type Output = E2::Output;
     fn resolve(self, dependency: D) -> Self::Output {
         self.0.resolve(dependency.clone()).resolve(dependency)
+    }
+}
+
+/// Provide the dependency of an effect.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct Provide<E, D> {
+    effect: E,
+    dependency: D,
+}
+
+impl<E, D> Effect<()> for Provide<E, D>
+where
+    E: Effect<D>,
+{
+    type Output = E::Output;
+    fn resolve(self, _dependency: ()) -> Self::Output {
+        self.effect.resolve(self.dependency)
     }
 }
 

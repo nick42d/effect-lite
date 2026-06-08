@@ -1,23 +1,21 @@
 use crate::Effect;
 
-pub trait EffectStream<D>: Effect<D, Output = Self::OutputStream> {
-    type OutputStream: futures::Stream<Item = Self::OutputItem>;
-    type OutputItem;
+pub trait EffectStream<D>: Effect<D, Output: futures::Stream<Item = Self::StreamItem>> {
+    type StreamItem;
 }
 impl<T, D, I> EffectStream<D> for T
 where
     T: crate::Effect<D>,
     T::Output: futures::Stream<Item = I>,
 {
-    type OutputStream = T::Output;
-    type OutputItem = I;
+    type StreamItem = I;
 }
 impl<D, T> EffectStreamExt<D> for T where T: EffectStream<D> {}
 pub trait EffectStreamExt<D>: EffectStream<D> {
     fn map_stream_item_async<F, Fut, T>(self, map_fn: F) -> MapStreamItemAsync<Self, F>
     where
         Self: Sized,
-        F: Fn(Self::OutputItem) -> Fut,
+        F: Fn(Self::StreamItem) -> Fut,
         Fut: Future<Output = T>,
     {
         MapStreamItemAsync {
@@ -28,7 +26,7 @@ pub trait EffectStreamExt<D>: EffectStream<D> {
     fn map_stream_item<F, Fut, T>(self, map_fn: F) -> MapStreamItem<Self, F>
     where
         Self: Sized,
-        F: Fn(Self::OutputItem) -> T,
+        F: Fn(Self::StreamItem) -> T,
     {
         MapStreamItem {
             effect: self,
@@ -45,7 +43,7 @@ pub struct MapStreamItemAsync<E, F> {
 impl<D, E, F, Fut, T> Effect<D> for MapStreamItemAsync<E, F>
 where
     E: EffectStream<D>,
-    F: Fn(E::OutputItem) -> Fut,
+    F: Fn(E::StreamItem) -> Fut,
     Fut: Future<Output = T>,
 {
     type Output = futures::stream::Then<E::Output, Fut, F>;
@@ -63,7 +61,7 @@ pub struct MapStreamItem<E, F> {
 impl<D, E, F, T> Effect<D> for MapStreamItem<E, F>
 where
     E: EffectStream<D>,
-    F: Fn(E::OutputItem) -> T,
+    F: Fn(E::StreamItem) -> T,
 {
     type Output = futures::stream::Map<E::Output, F>;
     fn resolve(self, dependency: D) -> Self::Output {

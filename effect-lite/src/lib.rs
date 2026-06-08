@@ -131,13 +131,9 @@
 //! ```
 
 pub use adapters::EffectExt;
-pub use async_effect::EffectAsync;
 
 pub mod adapters;
-pub mod async_effect;
 pub mod either;
-#[cfg(feature = "futures")]
-pub mod stream_effect;
 
 #[must_use = "effects are lazy and do nothing unless resolved"]
 pub trait Effect<D> {

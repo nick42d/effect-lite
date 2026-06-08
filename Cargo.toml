@@ -1,23 +1,7 @@
-[package]
-name = "effect-light"
-version = "0.2.0"
-edition = "2024"
-description = "An experimental, lightweight (no-std compatible), opinionated algebraic effects library for Rust."
-license = "MIT"
-authors = ["nick42d"]
-homepage = "https://github.com/nick42d/effect-light"
-repository = "https://github.com/nick42d/effect-light"
-readme = "README.md"
+[workspace]
+members = ["effect-lite", "effect-lite-executor", "effect-lite-futures"]
+resolver = "2"
 
-[dependencies]
-futures = { version = "0.3.32", default-features = false, optional = true }
-
-[dev-dependencies]
-futures = { version = "0.3.32", default-features = false, features = ["executor"] }
-reqwest = "0.13.2"
-tokio = { version = "1.50.0", features = ["rt-multi-thread"] }
-
-[features]
-default = []
-futures = ["dep:futures"]
-std = []
+[workspace.lints.clippy]
+todo = "warn"
+unwrap_used = "warn"
