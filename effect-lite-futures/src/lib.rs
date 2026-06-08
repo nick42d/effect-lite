@@ -1,4 +1,5 @@
-use effect_lite::Effect;
+#![feature(impl_trait_in_assoc_type)]
+use effect_lite::{Effect, EffectExt};
 
 pub trait EffectAsync<D>: Effect<D, Output: Future<Output = Self::FutureOutput>> {
     type FutureOutput;
@@ -98,17 +99,18 @@ where
     E1: EffectAsync<D>,
     E2: Effect<E1::FutureOutput>,
 {
-    type Output = futures::future::Map<E1::Output, E2>;
+    // impl Future is used here rather than futures::future::Map becuase the closure type is unnamable.
+    type Output = impl Future<Output = E2::Output>;
     fn resolve(self, dependency: D) -> Self::Output {
         let Self {
             first_effect,
             next_effect,
         } = self;
-        futures::FutureExt::map(first_effect.resolve(dependency), map_fn)
+        futures::FutureExt::map(first_effect.resolve(dependency), |output| {
+            next_effect.resolve(output)
+        })
     }
 }
-
-use crate::Effect;
 
 pub trait EffectStream<D>: Effect<D, Output = Self::OutputStream> {
     type OutputStream: futures::Stream<Item = Self::OutputItem>;

@@ -1,7 +1,0 @@
-[workspace]
-members = ["effect-lite", "effect-lite-executor", "effect-lite-futures"]
-resolver = "2"
-
-[workspace.lints.clippy]
-todo = "warn"
-unwrap_used = "warn"
