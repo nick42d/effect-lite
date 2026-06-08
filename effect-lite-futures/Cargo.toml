@@ -1,8 +1,11 @@
 [package]
-name = "effect-light-futures"
+name = "effect-lite-futures"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 effect-lite = {path = "../effect-lite"}
 futures = { version = "0.3.32", default-features = false }
+
+[dev-dependencies]
+futures = { version = "0.3.32", default-features = false, features = ["executor"] }

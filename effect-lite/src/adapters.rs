@@ -1,13 +1,11 @@
-use core::ops::{Deref, DerefMut};
-
 use crate::{either::Either, Effect};
 
 pub trait EffectExt<D>: Effect<D> {
     /// Map the output of an effect.
     /// ```
-    /// use effect_light::{Effect, EffectExt};
+    /// use effect_lite::{Effect, EffectExt};
     ///
-    /// let x = effect_light::value("Hello, world!").map_output(|s: &str| s.to_ascii_lowercase());
+    /// let x = effect_lite::value("Hello, world!").map_output(|s: &str| s.to_ascii_lowercase());
     /// assert_eq!(x.resolve(()), "hello, world!");
     /// ```
     fn map_output<T, F>(self, map_fn: F) -> MapOutput<Self, F>
@@ -22,10 +20,10 @@ pub trait EffectExt<D>: Effect<D> {
     }
     /// Map the output of an effect (async closure support)
     /// ```
-    /// use effect_light::{Effect, EffectExt};
+    /// use effect_lite::{Effect, EffectExt};
     ///
     /// # futures::executor::block_on(async {
-    /// let x = effect_light::value("Hello, world!").map_output_async(async |s| s.to_ascii_lowercase());
+    /// let x = effect_lite::value("Hello, world!").map_output_async(async |s| s.to_ascii_lowercase());
     /// assert_eq!(x.resolve(()).await, "hello, world!");
     /// # })
     /// ```
@@ -42,9 +40,9 @@ pub trait EffectExt<D>: Effect<D> {
     }
     /// Map the dependency of an effect.
     /// ```
-    /// use effect_light::{Effect, EffectExt};
+    /// use effect_lite::{Effect, EffectExt};
     ///
-    /// let x = effect_light::echo::<String>().map_dependency(|s: &str| s.to_string());
+    /// let x = effect_lite::echo::<String>().map_dependency(|s: &str| s.to_string());
     /// assert_eq!(x.resolve("Hello, world!"), String::from("Hello, world!"));
     /// ```
     fn map_dependency<D2, F>(self, map_fn: F) -> MapDependency<Self, F>
@@ -57,12 +55,32 @@ pub trait EffectExt<D>: Effect<D> {
             map_fn,
         }
     }
+    /// Chain two effects where the second takes the output of the first as a dependency.
+    /// ```
+    /// use effect_lite::{Effect, EffectExt};
+    ///
+    /// let x = effect_lite::value("Hello, world!");
+    /// let y = effect_lite::fn_effect(|s: &str| s.to_ascii_lowercase());
+    /// assert_eq!(x.then(y).resolve(()), "hello, world!");
+    /// ```
+    /// # Resolution note
+    /// The first effect is resolved first.
+    fn then<E2>(self, next_effect: E2) -> Then<Self, E2>
+    where
+        Self: Sized,
+        E2: Effect<Self::Output>,
+    {
+        Then {
+            first_effect: self,
+            next_effect,
+        }
+    }
     /// Merge two effects.
     /// ```
-    /// use effect_light::{Effect, EffectExt};
+    /// use effect_lite::{Effect, EffectExt};
     ///
-    /// let x = effect_light::fn_effect(|s: &str| s.to_ascii_lowercase());
-    /// let y = effect_light::fn_effect(|s: &str| s.to_ascii_uppercase());
+    /// let x = effect_lite::fn_effect(|s: &str| s.to_ascii_lowercase());
+    /// let y = effect_lite::fn_effect(|s: &str| s.to_ascii_uppercase());
     /// assert_eq!(x.merge(y).resolve(("Hello","world")), ("hello".to_string(),"WORLD".to_string()));
     /// ```
     /// # Resolution note
@@ -147,12 +165,12 @@ pub trait EffectExt<D>: Effect<D> {
     }
     /// Helper function to wrap in the left side of a [crate::either::Either]
     /// ```
-    /// use effect_light::EffectExt;
+    /// use effect_lite::EffectExt;
     ///
-    /// fn diverges(x: bool) -> impl effect_light::Effect<()> {
+    /// fn diverges(x: bool) -> impl effect_lite::Effect<()> {
     ///     match x {
-    ///         true => effect_light::fn_effect(|_| "Hello").to_left(),
-    ///         false => effect_light::fn_effect(|_| "World!").to_right(),
+    ///         true => effect_lite::fn_effect(|_| "Hello").to_left(),
+    ///         false => effect_lite::fn_effect(|_| "World!").to_right(),
     ///     }
     /// }
     /// ```
@@ -165,12 +183,12 @@ pub trait EffectExt<D>: Effect<D> {
     }
     /// Helper function to wrap in the right side of a [crate::either::Either]
     /// ```
-    /// use effect_light::EffectExt;
+    /// use effect_lite::EffectExt;
     ///
-    /// fn diverges(x: bool) -> impl effect_light::Effect<()> {
+    /// fn diverges(x: bool) -> impl effect_lite::Effect<()> {
     ///     match x {
-    ///         true => effect_light::fn_effect(|_| "Hello").to_left(),
-    ///         false => effect_light::fn_effect(|_| "World!").to_right(),
+    ///         true => effect_lite::fn_effect(|_| "Hello").to_left(),
+    ///         false => effect_lite::fn_effect(|_| "World!").to_right(),
     ///     }
     /// }
     /// ```
@@ -186,12 +204,12 @@ pub trait EffectExt<D>: Effect<D> {
 pub trait EffectExt2<D>: for<'a> Effect<&'a mut D> {
     /// Flatten an effect returning an effect (with the same dependency) into a single effect, where the dependency is a mutable reference
     /// ```
-    /// use effect_light::adapters::EffectExt2;
-    /// use effect_light::Effect;
+    /// use effect_lite::adapters::EffectExt2;
+    /// use effect_lite::Effect;
     ///
-    /// let x = effect_light::fn_effect(move |s: &mut String| {
+    /// let x = effect_lite::fn_effect(move |s: &mut String| {
     ///     s.push_str("a");
-    ///     effect_light::fn_effect(move |s: &mut String| s.push_str("a"))
+    ///     effect_lite::fn_effect(move |s: &mut String| s.push_str("a"))
     /// });
     /// let mut s = "Hello".to_string();
     /// let _ = x.flat_collapse_mut().resolve(&mut s);
@@ -243,6 +261,28 @@ where
     fn resolve(self, dependency: D) -> Self::Output {
         let Self { effect, map_fn } = self;
         map_fn(effect.resolve(dependency))
+    }
+}
+
+/// Chain two effects where the second takes the output of the first as a dependency.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct Then<E1, E2> {
+    first_effect: E1,
+    next_effect: E2,
+}
+
+impl<D, E1, E2> Effect<D> for Then<E1, E2>
+where
+    E1: Effect<D>,
+    E2: Effect<E1::Output>,
+{
+    type Output = E2::Output;
+    fn resolve(self, dependency: D) -> Self::Output {
+        let Self {
+            first_effect,
+            next_effect,
+        } = self;
+        next_effect.resolve(first_effect.resolve(dependency))
     }
 }
 

@@ -42,8 +42,14 @@ pub trait EffectAsyncExt<D>: EffectAsync<D> {
     }
     /// # Example
     /// ```
-    /// let effect_a = fn_effect_async(|a: String| async { a });
-    /// let effect_b = fn_effect_async(|a: String| todo!());
+    /// use effect_lite::Effect;
+    /// use effect_lite_futures::EffectAsyncExt;
+    ///
+    /// let effect_a = effect_lite::fn_effect_async(|a: String| async { a });
+    /// let effect_b = effect_lite::fn_effect(|a: String| format!("{a}{a}"));
+    /// let combined = effect_a.then(effect_b);
+    /// let string = format!("Hello");
+    /// assert_eq!(futures::executor::block_on(combined.resolve(string)), format!("HelloHello"));
     /// ```
     fn then<E>(self, next_effect: E) -> Then<Self, E>
     where

@@ -12,7 +12,7 @@
 //! ### Inversion of control
 //! // An effect that requires access to the inaccessible application state in the parent struct.
 //! ```
-//! use effect_light::Effect;
+//! use effect_lite::Effect;
 //!
 //! #[derive(Default)]
 //! struct AppState {
@@ -25,9 +25,9 @@
 //!         pub message: String
 //!     }
 //!     impl Component {
-//!         pub fn handle_message(&mut self, msg: String) -> impl effect_light::Effect<&mut super::AppState> + 'static {
+//!         pub fn handle_message(&mut self, msg: String) -> impl effect_lite::Effect<&mut super::AppState> + 'static {
 //!             self.message = msg;
-//!             effect_light::fn_effect(|app_state: &mut super::AppState| app_state.count +=1)
+//!             effect_lite::fn_effect(|app_state: &mut super::AppState| app_state.count +=1)
 //!         }
 //!     }
 //! }
@@ -44,7 +44,7 @@
 //! ### Dependency injection
 //! // Define generic effects, and resolve them using any type that meets the trait bounds.
 //! ```
-//! use effect_light::Effect;
+//! use effect_lite::Effect;
 //!
 //! trait Foo {}
 //! struct ProdFoo;
@@ -65,7 +65,7 @@
 //! ```
 //! ### Centralise side effects
 //! ```
-//! use effect_light::Effect;
+//! use effect_lite::Effect;
 //!
 //! struct StdoutPrinter;
 //! impl StdoutPrinter {
@@ -74,17 +74,17 @@
 //!     }
 //! }
 //! let printer = StdoutPrinter;
-//! let effect = effect_light::fn_effect(|printer: &StdoutPrinter| printer.print("Hello, world"));
+//! let effect = effect_lite::fn_effect(|printer: &StdoutPrinter| printer.print("Hello, world"));
 //! // Prints to console here.
 //! effect.resolve(&StdoutPrinter);
 //! ```
 //! ### Dependency injection - async
 //! // An effect that requires access to a `reqwest::Client`.
 //! ```
-//! use effect_light::Effect;
+//! use effect_lite::Effect;
 //!
 //! let client = reqwest::Client::new();
-//! let effect = effect_light::fn_effect_async(async |client: &reqwest::Client|
+//! let effect = effect_lite::fn_effect_async(async |client: &reqwest::Client|
 //!     client.get("https://www.google.com").send().await.unwrap().text().await.unwrap()
 //! );
 //! let future = effect.resolve(&client);
@@ -95,7 +95,7 @@
 //! ### Module-level access control
 //! // An effect that requires access to an inaccessible application state
 //! ```
-//! use effect_light::{Effect, EffectAsync, EffectExt};
+//! use effect_lite::{Effect, EffectAsync, EffectExt};
 //!
 //! #[derive(Default)]
 //! struct AppState {
@@ -108,9 +108,9 @@
 //!         content: String
 //!     }
 //!     impl Component {
-//!         pub fn update_content<'a>() -> impl effect_light::EffectAsync<(&'a mut Self, &'a reqwest::Client), OutputAsync=()> {
+//!         pub fn update_content<'a>() -> impl effect_lite::EffectAsync<(&'a mut Self, &'a reqwest::Client), OutputAsync=()> {
 //!             // ...but we can provide parent module an Effect that grants the required access.
-//!             effect_light::fn_effect_async(async move |(this, client): (&mut Self, &reqwest::Client)| {
+//!             effect_lite::fn_effect_async(async move |(this, client): (&mut Self, &reqwest::Client)| {
 //!                 let output = client.get("https://www.google.com").send().await.unwrap().text().await.unwrap();
 //!                 this.content = output;
 //!             })
@@ -146,10 +146,10 @@ pub trait Effect<D> {
 pub struct None();
 /// Effect that produces no output and has no side effects.
 /// ```
-/// use effect_light::Effect;
+/// use effect_lite::Effect;
 ///
 /// let mut x = String::new();
-/// assert_eq!(effect_light::none().resolve(&mut x), ());
+/// assert_eq!(effect_lite::none().resolve(&mut x), ());
 /// assert_eq!(x, String::new());
 /// ```
 pub fn none() -> None {
@@ -165,9 +165,9 @@ impl<D> Effect<D> for None {
 pub struct FnEffect<T>(T);
 /// An effect built from a closure.
 /// ```
-/// use effect_light::Effect;
+/// use effect_lite::Effect;
 ///
-/// let x = effect_light::fn_effect(|t: &mut Vec<_>| t.pop());
+/// let x = effect_lite::fn_effect(|t: &mut Vec<_>| t.pop());
 /// let mut y = vec![1,2,3];
 /// assert_eq!(x.resolve(&mut y), Some(3));
 /// assert_eq!(y, vec![1,2]);
@@ -193,9 +193,9 @@ where
 pub struct AsyncFnEffect<T>(T);
 /// An effect built from an async closure.
 /// ```
-/// use effect_light::Effect;
+/// use effect_lite::Effect;
 ///
-/// let x = effect_light::fn_effect_async(async |t: &mut Vec<_>| t.pop());
+/// let x = effect_lite::fn_effect_async(async |t: &mut Vec<_>| t.pop());
 /// let mut y = vec![1,2,3];
 /// assert_eq!(futures::executor::block_on(x.resolve(&mut y)), Some(3));
 /// assert_eq!(y, vec![1,2]);
@@ -223,9 +223,9 @@ where
 pub struct Value<T>(T);
 /// Basic Effect returning the contained value immediately.
 /// ```
-/// use effect_light::Effect;
+/// use effect_lite::Effect;
 ///
-/// let x = effect_light::value("Hello, world!");
+/// let x = effect_lite::value("Hello, world!");
 /// assert_eq!(x.resolve(()), "Hello, world!");
 /// ```
 pub fn value<T>(t: T) -> Value<T> {
@@ -243,10 +243,10 @@ impl<T> Effect<()> for Value<T> {
 pub struct AsyncValue<T>(T);
 /// Basic Effect returning the contained value asynchronously.
 /// ```
-/// use effect_light::Effect;
+/// use effect_lite::Effect;
 ///
 /// # futures::executor::block_on(async {
-/// let x = effect_light::value_async(async {"Hello, world!"});
+/// let x = effect_lite::value_async(async {"Hello, world!"});
 /// assert_eq!(x.resolve(()).await, "Hello, world!");
 /// # });
 /// ```
@@ -268,9 +268,9 @@ where
 
 /// Basic Effect returning the dependency.
 /// ```
-/// use effect_light::Effect;
+/// use effect_lite::Effect;
 ///
-/// let x = effect_light::echo();
+/// let x = effect_lite::echo();
 /// assert_eq!(x.resolve("Hello, world!"), "Hello, world!");
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
