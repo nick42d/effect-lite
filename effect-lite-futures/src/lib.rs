@@ -1,5 +1,25 @@
+use std::process::Output;
+
 use effect_lite::{Effect, EffectExt};
 use pin_project::pin_project;
+
+pub trait IntoEffectAsync<D> {
+    type FutureOutput;
+    fn into_effect_async(self)
+        -> impl Effect<D, Output = impl Future<Output = Self::FutureOutput>>;
+}
+impl<T, D, O> IntoEffectAsync<D> for T
+where
+    T: crate::Effect<D>,
+    T::Output: Future<Output = O>,
+{
+    type FutureOutput = O;
+    fn into_effect_async(
+        self,
+    ) -> impl Effect<D, Output = impl Future<Output = Self::FutureOutput>> {
+        self
+    }
+}
 
 pub trait EffectAsync<D>: Effect<D, Output: Future<Output = Self::FutureOutput>> {
     type FutureOutput;
