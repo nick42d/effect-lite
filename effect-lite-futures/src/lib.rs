@@ -1,5 +1,5 @@
-#![feature(impl_trait_in_assoc_type)]
 use effect_lite::{Effect, EffectExt};
+use pin_project::pin_project;
 
 pub trait EffectAsync<D>: Effect<D, Output: Future<Output = Self::FutureOutput>> {
     type FutureOutput;
@@ -34,11 +34,11 @@ pub trait EffectAsyncExt<D>: EffectAsync<D> {
             map_fn,
         }
     }
-    fn into_stream(self) -> IntoStream<Self>
+    fn into_stream_effect(self) -> IntoStreamEffect<Self>
     where
         Self: Sized,
     {
-        IntoStream(self)
+        IntoStreamEffect(self)
     }
     /// # Example
     /// ```
@@ -63,8 +63,8 @@ pub trait EffectAsyncExt<D>: EffectAsync<D> {
     }
 }
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct IntoStream<E>(E);
-impl<D, E> Effect<D> for IntoStream<E>
+pub struct IntoStreamEffect<E>(E);
+impl<D, E> Effect<D> for IntoStreamEffect<E>
 where
     E: EffectAsync<D>,
 {
@@ -115,21 +115,62 @@ pub struct AsyncThen<E1, E2> {
     next_effect: E2,
 }
 
+#[pin_project(project = MapProj, project_replace = MapProjReplace)]
+// #[project_replace = MapProjReplace]
+#[must_use = "futures do nothing unless you `.await` or poll them"]
+#[derive(Debug)]
+pub enum AsyncThenOutput<F, E> {
+    Incomplete {
+        #[pin]
+        future: F,
+        next_effect: E,
+    },
+    Complete,
+}
+
+impl<F, E> Future for AsyncThenOutput<F, E>
+where
+    F: Future,
+    E: Effect<F::Output>,
+{
+    type Output = E::Output;
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        // Implementation to match futures::future::Map
+        match self.as_mut().project() {
+            MapProj::Incomplete { future, .. } => {
+                let output = futures::ready!(future.poll(cx));
+                match self.project_replace(Self::Complete) {
+                    MapProjReplace::Incomplete { next_effect, .. } => {
+                        std::task::Poll::Ready(next_effect.resolve(output))
+                    }
+                    MapProjReplace::Complete => unreachable!(),
+                }
+            }
+            MapProj::Complete => {
+                panic!("AsyncThenOutput must not be polled after it returned 'Poll::Ready'")
+            }
+        }
+    }
+}
+
 impl<E1, E2, D> Effect<D> for AsyncThen<E1, E2>
 where
     E1: EffectAsync<D>,
     E2: Effect<E1::FutureOutput>,
 {
-    // impl Future is used here rather than futures::future::Map becuase the closure type is unnamable.
-    type Output = impl Future<Output = E2::Output>;
+    type Output = AsyncThenOutput<E1::Output, E2>;
     fn resolve(self, dependency: D) -> Self::Output {
         let Self {
             first_effect,
             next_effect,
         } = self;
-        futures::FutureExt::map(first_effect.resolve(dependency), |output| {
-            next_effect.resolve(output)
-        })
+        AsyncThenOutput::Incomplete {
+            future: first_effect.resolve(dependency),
+            next_effect,
+        }
     }
 }
 

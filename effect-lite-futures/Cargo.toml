@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 effect-lite = {path = "../effect-lite"}
 futures = { version = "0.3.32", default-features = false }
+pin-project = "1.1.13"
 
 [dev-dependencies]
 futures = { version = "0.3.32", default-features = false, features = ["executor"] }
