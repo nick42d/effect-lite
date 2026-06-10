@@ -1,6 +1,4 @@
-use std::process::Output;
-
-use effect_lite::{Effect, EffectExt};
+use effect_lite::Effect;
 use pin_project::pin_project;
 
 pub trait IntoEffectAsync<D> {
@@ -44,7 +42,7 @@ pub trait EffectAsyncExt<D>: EffectAsync<D> {
             map_fn,
         }
     }
-    fn map_async_output<F, Fut, T>(self, map_fn: F) -> MapAsyncOutput<Self, F>
+    fn map_async_output<F, T>(self, map_fn: F) -> MapAsyncOutput<Self, F>
     where
         Self: Sized,
         F: Fn(Self::FutureOutput) -> T,
@@ -135,7 +133,7 @@ pub struct AsyncThen<E1, E2> {
     next_effect: E2,
 }
 
-#[pin_project(project = MapProj, project_replace = MapProjReplace)]
+#[pin_project(project = AsyncThenProj, project_replace = AsyncThenProjReplace)]
 // #[project_replace = MapProjReplace]
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 #[derive(Debug)]
@@ -146,6 +144,16 @@ pub enum AsyncThenOutput<F, E> {
         next_effect: E,
     },
     Complete,
+}
+
+impl<F, E> futures::future::FusedFuture for AsyncThenOutput<F, E>
+where
+    F: Future,
+    E: Effect<F::Output>,
+{
+    fn is_terminated(&self) -> bool {
+        todo!()
+    }
 }
 
 impl<F, E> Future for AsyncThenOutput<F, E>
@@ -160,16 +168,16 @@ where
     ) -> std::task::Poll<Self::Output> {
         // Implementation to match futures::future::Map
         match self.as_mut().project() {
-            MapProj::Incomplete { future, .. } => {
+            AsyncThenProj::Incomplete { future, .. } => {
                 let output = futures::ready!(future.poll(cx));
                 match self.project_replace(Self::Complete) {
-                    MapProjReplace::Incomplete { next_effect, .. } => {
+                    AsyncThenProjReplace::Incomplete { next_effect, .. } => {
                         std::task::Poll::Ready(next_effect.resolve(output))
                     }
-                    MapProjReplace::Complete => unreachable!(),
+                    AsyncThenProjReplace::Complete => unreachable!(),
                 }
             }
-            MapProj::Complete => {
+            AsyncThenProj::Complete => {
                 panic!("AsyncThenOutput must not be polled after it returned 'Poll::Ready'")
             }
         }
@@ -229,6 +237,30 @@ pub trait EffectStreamExt<D>: EffectStream<D> {
             map_fn,
         }
     }
+    /// # Example
+    /// ```
+    /// use effect_lite::Effect;
+    /// use effect_lite_futures::EffectAsyncExt;
+    /// use effect_lite_futures::EffectStreamExt;
+    ///
+    /// let effect_a = effect_lite::fn_effect_async(|a: String| async { a }).into_stream_effect();
+    /// let effect_b = effect_lite::fn_effect(|a: String| format!("{a}{a}"));
+    /// let combined = effect_a.stream_then(effect_b);
+    /// let string = format!("Hello");
+    /// let combined_stream = combined.resolve(string);
+    /// let combined_stream_pinned = std::pin::pin!(combined_stream);
+    /// assert_eq!(futures::executor::block_on_stream(combined_stream_pinned).collect::<Vec<_>>(), vec![format!("HelloHello")]);
+    /// ```
+    fn stream_then<E>(self, next_effect: E) -> StreamThen<Self, E>
+    where
+        Self: Sized,
+        E: Effect<Self::OutputItem> + Clone,
+    {
+        StreamThen {
+            first_effect: self,
+            next_effect,
+        }
+    }
 }
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct MapStreamItemAsync<E, F> {
@@ -261,5 +293,56 @@ where
     fn resolve(self, dependency: D) -> Self::Output {
         let Self { effect, map_fn } = self;
         futures::StreamExt::map(effect.resolve(dependency), map_fn)
+    }
+}
+/// Map the output of an Effect.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct StreamThen<E1, E2> {
+    first_effect: E1,
+    next_effect: E2,
+}
+
+impl<E1, E2, D> Effect<D> for StreamThen<E1, E2>
+where
+    E1: EffectStream<D>,
+    E2: Effect<E1::OutputItem>,
+{
+    type Output = StreamThenOutput<E1::Output, E2>;
+    fn resolve(self, dependency: D) -> Self::Output {
+        let Self {
+            first_effect,
+            next_effect,
+        } = self;
+        StreamThenOutput::Incomplete {
+            future: first_effect.resolve(dependency),
+            next_effect,
+        }
+    }
+}
+
+#[pin_project(project = StreamThenProj, project_replace = StreamThenReplace)]
+// #[project_replace = MapProjReplace]
+#[must_use = "futures do nothing unless you `.await` or poll them"]
+#[derive(Debug)]
+pub enum StreamThenOutput<F, E> {
+    Incomplete {
+        #[pin]
+        future: F,
+        next_effect: E,
+    },
+    Complete,
+}
+
+impl<F, E> futures::Stream for StreamThenOutput<F, E>
+where
+    F: futures::Stream,
+    E: Effect<F::Item> + Clone,
+{
+    type Item = E::Output;
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        todo!()
     }
 }

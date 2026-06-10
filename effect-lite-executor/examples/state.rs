@@ -1,8 +1,9 @@
 //! Example of an application with locally and globally scoped effects
 #![feature(impl_trait_in_assoc_type)]
 use crossterm::event::{Event, KeyCode, KeyEvent};
-use effect_light::Effect;
+use effect_lite::{Effect, EffectExt};
 use effect_lite_executor::constrained::Constraint;
+use effect_lite_futures::EffectAsyncExt;
 use futures::{Stream, StreamExt};
 use std::{
     assert_matches,
@@ -10,6 +11,8 @@ use std::{
     time::Duration,
 };
 use tokio::io::AsyncBufReadExt;
+
+use crate::subcomponent::SubComponentStateEffect;
 
 struct App {
     state: AppState,
@@ -26,24 +29,39 @@ struct AppState {
 
 enum AppStateEffect {
     ChangeSubcomponent(usize),
-    Subcomponent0Effect(SubComponentStateEffect),
-    Subcomponent1Effect(SubComponentStateEffect),
+    Subcomponent0Effect(subcomponent::SubComponentStateEffect),
+    Subcomponent1Effect(subcomponent::SubComponentStateEffect),
 }
 
-impl effect_light::Effect<&mut AppState> for AppStateEffect {
-    type Output = ();
-
+impl effect_lite::Effect<&mut AppState> for AppStateEffect {
+    type Output = Option<
+        impl effect_lite_futures::EffectAsync<MockNetworkServer, FutureOutput = AppStateEffect>,
+    >;
     fn resolve(self, dependency: &mut AppState) -> Self::Output {
         match self {
             AppStateEffect::ChangeSubcomponent(x) => {
                 assert_matches!(x, 0..=1);
                 dependency.selected_component = x;
+                None
             }
+            AppStateEffect::Subcomponent0Effect(sub_component_state_effect) => {
+                let tbc = sub_component_state_effect
+                    .resolve(&mut dependency.subcomponent_0)
+                    .map(|ef| {
+                        ef.map_async_output(|out| {
+                            out.map_output(|s_eff| AppStateEffect::Subcomponent0Effect(s_eff))
+                        })
+                    });
+                tbc
+            }
+            AppStateEffect::Subcomponent1Effect(sub_component_state_effect) => todo!(),
         }
     }
 }
 
 mod subcomponent {
+    use effect_lite_futures::EffectAsyncExt;
+
     use crate::{MockNetworkServer, MockNetworkServerEffect};
 
     #[derive(Debug, Default)]
@@ -51,23 +69,35 @@ mod subcomponent {
         subcomponent_text: String,
         subcomponent_counter: usize,
     }
-    enum SubComponentStateEffect {
+    pub struct SubComponentStateEffect {
+        pub inner: SubComponentStateEffectInner,
+    }
+    /// Hidden inner so that SubComponentStateEffect cannot be constructed outside this module.
+    pub enum SubComponentStateEffectInner {
         ReplaceText(String),
         GetAnimalAndReplaceText,
     }
-    impl effect_light::Effect<&mut SubComponentState> for SubComponentStateEffect {
-        type Output =
-            Option<impl effect_light::Effect<MockNetworkServer, Output = SubComponentStateEffect>>;
+    impl effect_lite::Effect<&mut SubComponentState> for SubComponentStateEffect {
+        type Output = Option<
+            impl effect_lite_futures::EffectAsync<
+                MockNetworkServer,
+                FutureOutput = SubComponentStateEffect,
+            >,
+        >;
         fn resolve(self, dependency: &mut SubComponentState) -> Self::Output {
-            match self {
-                SubComponentStateEffect::ReplaceText(s) => {
+            match self.inner {
+                SubComponentStateEffectInner::ReplaceText(s) => {
                     dependency.subcomponent_counter += 1;
                     dependency.subcomponent_text = s;
                     None
                 }
-                SubComponentStateEffect::GetAnimalAndReplaceText => {
-                    MockNetworkServerEffect::GetAnimal;
-                }
+                SubComponentStateEffectInner::GetAnimalAndReplaceText => Some(
+                    MockNetworkServerEffect::GetAnimal.map_async_output(|animal| {
+                        SubComponentStateEffect {
+                            inner: SubComponentStateEffectInner::ReplaceText(animal),
+                        }
+                    }),
+                ),
             }
         }
     }
@@ -82,7 +112,7 @@ impl StdoutPrinter {
 enum MockNetworkServerEffect {
     GetAnimal,
 }
-impl effect_light::Effect<MockNetworkServer> for MockNetworkServerEffect {
+impl effect_lite::Effect<MockNetworkServer> for MockNetworkServerEffect {
     type Output = impl Future<Output = String>;
     fn resolve(self, dependency: MockNetworkServer) -> Self::Output {
         match self {
@@ -91,7 +121,7 @@ impl effect_light::Effect<MockNetworkServer> for MockNetworkServerEffect {
     }
 }
 #[derive(Clone)]
-struct MockNetworkServer {
+pub struct MockNetworkServer {
     idx: Arc<Mutex<usize>>,
 }
 impl MockNetworkServer {
@@ -114,6 +144,9 @@ async fn main() {
     println!("'a' to get next animal and apply it to subcomponent, 'Esc' to quit, '0' to select component 0, '1' to select component '1'\r");
     let mut reader = crossterm::event::EventStream::new();
     let mut state = AppState::default();
+    let server = MockNetworkServer {
+        idx: Arc::new(Mutex::new(0)),
+    };
 
     loop {
         let mut event = reader.next();
@@ -126,6 +159,19 @@ async fn main() {
                     }
                     Some(Ok(Event::Key(KeyEvent {code: KeyCode::Char('a'), .. } ))) => {
                         println!("'a' pressed\r");
+                        match state.selected_component {
+                            0 => {
+                                if let Some(effect) = AppStateEffect::Subcomponent0Effect(
+                                    SubComponentStateEffect { inner: crate::subcomponent::SubComponentStateEffectInner::GetAnimalAndReplaceText }
+                                    )
+                                    .resolve(&mut state)
+                                {
+                                        effect.resolve(server.clone()).await.resolve(&mut state);
+                                }
+                            },
+                            1 => todo!(),
+                            _ => panic!("Invalid subcomponent"),
+                        };
                     }
                     Some(Ok(Event::Key(KeyEvent {code: KeyCode::Char('0'), .. } ))) => {
                        println!("'0' pressed\r");

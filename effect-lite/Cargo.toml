@@ -10,7 +10,6 @@ repository = "https://github.com/nick42d/effect-light"
 readme = "README.md"
 
 [dependencies]
-futures = { version = "0.3.32", default-features = false, optional = true }
 
 [dev-dependencies]
 futures = { version = "0.3.32", default-features = false, features = ["executor"] }
@@ -19,5 +18,4 @@ tokio = { version = "1.50.0", features = ["rt-multi-thread"] }
 
 [features]
 default = []
-futures = ["dep:futures"]
 std = []
