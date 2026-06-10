@@ -16,6 +16,7 @@ use crate::subcomponent::SubComponentStateEffect;
 
 struct App {
     state: AppState,
+    exiting: bool,
 }
 
 #[derive(Debug, Default)]
@@ -47,11 +48,7 @@ impl effect_lite::Effect<&mut AppState> for AppStateEffect {
             AppStateEffect::Subcomponent0Effect(sub_component_state_effect) => {
                 let tbc = sub_component_state_effect
                     .resolve(&mut dependency.subcomponent_0)
-                    .map(|ef| {
-                        ef.map_async_output(|out| {
-                            out.map_output(|s_eff| AppStateEffect::Subcomponent0Effect(s_eff))
-                        })
-                    });
+                    .map(|ef| ef.map_async_output(|out| AppStateEffect::Subcomponent0Effect(out)));
                 tbc
             }
             AppStateEffect::Subcomponent1Effect(sub_component_state_effect) => todo!(),
@@ -143,53 +140,107 @@ async fn main() {
 
     println!("'a' to get next animal and apply it to subcomponent, 'Esc' to quit, '0' to select component 0, '1' to select component '1'\r");
     let mut reader = crossterm::event::EventStream::new();
-    let mut state = AppState::default();
+    let mut app = App {
+        exiting: false,
+        state: Default::default(),
+    };
     let server = MockNetworkServer {
         idx: Arc::new(Mutex::new(0)),
     };
+    let mut executor = effect_lite_executor::Executor::new(server, allocator_api2::alloc::System);
 
     loop {
+        if app.exiting {
+            break;
+        }
+
         let mut event = reader.next();
 
         tokio::select! {
-            maybe_event = event => {
-                match maybe_event {
-                    Some(Ok(Event::Key(KeyEvent {code: KeyCode::Char('c'), .. } ))) => {
-                        println!("'c' pressed\r");
+            Some(event) = event => {
+                let effect = map_event(event);
+                if let Some(out) = effect.resolve(&mut app) {
+                    if let Some(out) = out.resolve(&mut app.state) {
+                        executor.push_clone(out.into_stream_effect(), allocator_api2::alloc::System)
                     }
-                    Some(Ok(Event::Key(KeyEvent {code: KeyCode::Char('a'), .. } ))) => {
-                        println!("'a' pressed\r");
-                        match state.selected_component {
-                            0 => {
-                                if let Some(effect) = AppStateEffect::Subcomponent0Effect(
-                                    SubComponentStateEffect { inner: crate::subcomponent::SubComponentStateEffectInner::GetAnimalAndReplaceText }
-                                    )
-                                    .resolve(&mut state)
-                                {
-                                        effect.resolve(server.clone()).await.resolve(&mut state);
-                                }
-                            },
-                            1 => todo!(),
-                            _ => panic!("Invalid subcomponent"),
-                        };
-                    }
-                    Some(Ok(Event::Key(KeyEvent {code: KeyCode::Char('0'), .. } ))) => {
-                       println!("'0' pressed\r");
-                       AppStateEffect::ChangeSubcomponent(0).resolve(&mut state);
-                    }
-                    Some(Ok(Event::Key(KeyEvent {code: KeyCode::Char('1'), .. } ))) => {
-                        println!("'1' pressed\r");
-                       AppStateEffect::ChangeSubcomponent(1).resolve(&mut state);
-                    }
-                    Some(Ok(Event::Key(KeyEvent {code: KeyCode::Esc, .. } ))) => break,
-                    Some(Ok(event)) => println!("Unhandled event: {event:?}\r"),
-                    Some(Err(e)) => println!("Error: {e:?}\r"),
-                    None => break,
                 }
-                println!("State: {state:?}\r");
             }
         };
     }
 
     crossterm::terminal::disable_raw_mode().unwrap();
+}
+
+enum AppEffect {
+    CPressed,
+    APressed,
+    ZeroPressed,
+    OnePressed,
+    EscPressed,
+    UnknownEvent(crossterm::event::Event),
+    Error(std::io::Error),
+}
+
+impl Effect<&mut App> for AppEffect {
+    type Output = Option<AppStateEffect>;
+    fn resolve(self, dependency: &mut App) -> Self::Output {
+        match self {
+            AppEffect::CPressed => println!("'c' pressed\r"),
+            AppEffect::APressed => {
+                println!("'a' pressed\r");
+                // match state.selected_component {
+                //             0 => {
+                //                 if let Some(effect) = AppStateEffect::Subcomponent0Effect(
+                //                     SubComponentStateEffect { inner: crate::subcomponent::SubComponentStateEffectInner::GetAnimalAndReplaceText }
+                //                     )
+                //                     .resolve(&mut state)
+                //                 {
+                //                         effect.resolve(server.clone()).await.resolve(&mut state);
+                //                 }
+                //             },
+                //             1 => todo!(),
+                //             _ => panic!("Invalid subcomponent"),
+                //         };
+                todo!()
+            }
+            AppEffect::ZeroPressed => {
+                println!("'0' pressed\r");
+                return Some(AppStateEffect::ChangeSubcomponent(0));
+            }
+            AppEffect::OnePressed => {
+                println!("'1' pressed\r");
+                return Some(AppStateEffect::ChangeSubcomponent(1));
+            }
+            AppEffect::EscPressed => dependency.exiting = true,
+            AppEffect::UnknownEvent(event) => println!("Unhandled event: {event:?}\r"),
+            AppEffect::Error(e) => println!("Error: {e:?}\r"),
+        };
+        None
+    }
+}
+
+fn map_event(event: Result<crossterm::event::Event, std::io::Error>) -> AppEffect {
+    match event {
+        Ok(Event::Key(KeyEvent {
+            code: KeyCode::Char('c'),
+            ..
+        })) => AppEffect::CPressed,
+        Ok(Event::Key(KeyEvent {
+            code: KeyCode::Char('a'),
+            ..
+        })) => AppEffect::APressed,
+        Ok(Event::Key(KeyEvent {
+            code: KeyCode::Char('0'),
+            ..
+        })) => AppEffect::ZeroPressed,
+        Ok(Event::Key(KeyEvent {
+            code: KeyCode::Char('1'),
+            ..
+        })) => AppEffect::OnePressed,
+        Ok(Event::Key(KeyEvent {
+            code: KeyCode::Esc, ..
+        })) => AppEffect::EscPressed,
+        Ok(event) => AppEffect::UnknownEvent(event),
+        Err(e) => AppEffect::Error(e),
+    }
 }
