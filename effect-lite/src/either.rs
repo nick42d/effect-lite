@@ -5,12 +5,12 @@ pub enum Either<L, R> {
     Left(L),
     Right(R),
 }
-impl<L, R, T, D> Effect<D> for Either<L, R>
+impl<L, R, D> Effect<D> for Either<L, R>
 where
-    L: Effect<D, Output = T>,
-    R: Effect<D, Output = T>,
+    L: Effect<D>,
+    R: Effect<D, Output = L::Output>,
 {
-    type Output = T;
+    type Output = L::Output;
     fn resolve(self, dependency: D) -> Self::Output {
         match self {
             Either::Left(l) => l.resolve(dependency),

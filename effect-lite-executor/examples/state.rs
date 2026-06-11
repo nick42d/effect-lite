@@ -1,16 +1,14 @@
 //! Example of an application with locally and globally scoped effects
 #![feature(impl_trait_in_assoc_type)]
 use crossterm::event::{Event, KeyCode, KeyEvent};
-use effect_lite::{Effect, EffectExt};
-use effect_lite_executor::constrained::Constraint;
+use effect_lite::Effect;
 use effect_lite_futures::EffectAsyncExt;
-use futures::{Stream, StreamExt};
+use futures::StreamExt;
 use std::{
     assert_matches,
     sync::{Arc, Mutex},
     time::Duration,
 };
-use tokio::io::AsyncBufReadExt;
 
 use crate::subcomponent::SubComponentStateEffect;
 
@@ -50,16 +48,16 @@ impl effect_lite::Effect<&mut AppState> for AppStateEffect {
                     .resolve(&mut dependency.subcomponent_0)
                     .map(|ef| {
                         ef.map_async_output(|out| AppStateEffect::Subcomponent0Effect(out))
-                            .to_left()
+                            .to_async_left()
                     });
                 out
             }
             AppStateEffect::Subcomponent1Effect(sub_component_state_effect) => {
                 let out = sub_component_state_effect
-                    .resolve(&mut dependency.subcomponent_0)
+                    .resolve(&mut dependency.subcomponent_1)
                     .map(|ef| {
-                        ef.map_async_output(|out| AppStateEffect::Subcomponent0Effect(out))
-                            .to_right()
+                        ef.map_async_output(|out| AppStateEffect::Subcomponent1Effect(out))
+                            .to_async_right()
                     });
                 out
             }
@@ -68,29 +66,38 @@ impl effect_lite::Effect<&mut AppState> for AppStateEffect {
 }
 
 mod subcomponent {
-    use effect_lite_futures::EffectAsyncExt;
-
     use crate::{MockNetworkServer, MockNetworkServerEffect};
+    use effect_lite_futures::EffectAsyncExt;
 
     #[derive(Debug, Default)]
     pub struct SubComponentState {
         subcomponent_text: String,
         subcomponent_counter: usize,
     }
+    impl SubComponentState {}
     pub struct SubComponentStateEffect {
-        pub inner: SubComponentStateEffectInner,
+        pub(crate) inner: SubComponentStateEffectInner,
     }
     /// Hidden inner so that SubComponentStateEffect cannot be constructed outside this module.
     pub enum SubComponentStateEffectInner {
         ReplaceText(String),
         GetAnimalAndReplaceText,
     }
+    struct ReplaceTextWithString;
+    impl effect_lite::Effect<String> for ReplaceTextWithString {
+        type Output = SubComponentStateEffect;
+        fn resolve(self, dependency: String) -> Self::Output {
+            SubComponentStateEffect {
+                inner: SubComponentStateEffectInner::ReplaceText(dependency),
+            }
+        }
+    }
     impl effect_lite::Effect<&mut SubComponentState> for SubComponentStateEffect {
         type Output = Option<
             impl effect_lite_futures::EffectAsync<
-                    MockNetworkServer,
-                    FutureOutput = SubComponentStateEffect,
-                > + use<>,
+                MockNetworkServer,
+                FutureOutput = SubComponentStateEffect,
+            > + use<>,
         >;
         fn resolve(self, dependency: &mut SubComponentState) -> Self::Output {
             match self.inner {
@@ -99,13 +106,9 @@ mod subcomponent {
                     dependency.subcomponent_text = s;
                     None
                 }
-                SubComponentStateEffectInner::GetAnimalAndReplaceText => Some(
-                    MockNetworkServerEffect::GetAnimal.map_async_output(|animal| {
-                        SubComponentStateEffect {
-                            inner: SubComponentStateEffectInner::ReplaceText(animal),
-                        }
-                    }),
-                ),
+                SubComponentStateEffectInner::GetAnimalAndReplaceText => {
+                    Some(MockNetworkServerEffect::GetAnimal.async_then(ReplaceTextWithString))
+                }
             }
         }
     }
@@ -149,7 +152,9 @@ impl MockNetworkServer {
 async fn main() {
     crossterm::terminal::enable_raw_mode().unwrap();
 
-    println!("'a' to get next animal and apply it to subcomponent, 'Esc' to quit, '0' to select component 0, '1' to select component '1'\r");
+    println!(
+        "'a' to get next animal and apply it to subcomponent, 'Esc' to quit, '0' to select component 0, '1' to select component '1'\r"
+    );
     let mut reader = crossterm::event::EventStream::new();
     let mut app = App {
         exiting: false,
@@ -166,7 +171,7 @@ async fn main() {
             break;
         }
 
-        let mut event = reader.next();
+        let event = reader.next();
 
         tokio::select! {
             Some(event) = event => {

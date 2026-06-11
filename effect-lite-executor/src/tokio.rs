@@ -1,4 +1,4 @@
-use effect_light::{stream_effect::EffectStream, Effect, EffectAsync, EffectExt};
+use effect_light::{Effect, EffectAsync, EffectExt, stream_effect::EffectStream};
 use futures::{Stream, StreamExt};
 use std::{any::Any, pin::Pin};
 use tokio::task::JoinError;

@@ -58,6 +58,20 @@ pub trait EffectAsyncExt<D>: EffectAsync<D> {
     {
         IntoStreamEffect(self)
     }
+    fn to_left_async<R>(self) -> AsyncEither<Self, R>
+    where
+        Self: Sized,
+        R: EffectAsync<D, FutureOutput = Self::FutureOutput>,
+    {
+        AsyncEither::Left(self)
+    }
+    fn to_right_async<L>(self) -> AsyncEither<L, Self>
+    where
+        Self: Sized,
+        L: EffectAsync<D, FutureOutput = Self::FutureOutput>,
+    {
+        AsyncEither::Right(self)
+    }
     /// # Example
     /// ```
     /// use effect_lite::Effect;
@@ -123,6 +137,26 @@ where
     fn resolve(self, dependency: D) -> Self::Output {
         let Self { effect, map_fn } = self;
         futures::FutureExt::map(effect.resolve(dependency), map_fn)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub enum AsyncEither<L, R> {
+    Left(L),
+    Right(R),
+}
+
+impl<L, R, D> Effect<D> for AsyncEither<L, R>
+where
+    L: EffectAsync<D>,
+    R: EffectAsync<D, FutureOutput = L::FutureOutput>,
+{
+    type Output = futures::future::Either<L::Output, R::Output>;
+    fn resolve(self, dependency: D) -> Self::Output {
+        match self {
+            AsyncEither::Left(l) => futures::future::Either::Left(l.resolve(dependency)),
+            AsyncEither::Right(r) => futures::future::Either::Right(r.resolve(dependency)),
+        }
     }
 }
 
