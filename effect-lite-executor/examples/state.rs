@@ -48,7 +48,7 @@ impl effect_lite::Effect<&mut AppState> for AppStateEffect {
                     .resolve(&mut dependency.subcomponent_0)
                     .map(|ef| {
                         ef.map_async_output(|out| AppStateEffect::Subcomponent0Effect(out))
-                            .to_async_left()
+                            .to_left_async()
                     });
                 out
             }
@@ -57,7 +57,7 @@ impl effect_lite::Effect<&mut AppState> for AppStateEffect {
                     .resolve(&mut dependency.subcomponent_1)
                     .map(|ef| {
                         ef.map_async_output(|out| AppStateEffect::Subcomponent1Effect(out))
-                            .to_async_right()
+                            .to_right_async()
                     });
                 out
             }
@@ -95,9 +95,9 @@ mod subcomponent {
     impl effect_lite::Effect<&mut SubComponentState> for SubComponentStateEffect {
         type Output = Option<
             impl effect_lite_futures::EffectAsync<
-                MockNetworkServer,
-                FutureOutput = SubComponentStateEffect,
-            > + use<>,
+                    MockNetworkServer,
+                    FutureOutput = SubComponentStateEffect,
+                > + use<>,
         >;
         fn resolve(self, dependency: &mut SubComponentState) -> Self::Output {
             match self.inner {
