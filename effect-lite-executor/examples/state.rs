@@ -36,7 +36,8 @@ enum AppStateEffect {
 
 impl effect_lite::Effect<&mut AppState> for AppStateEffect {
     type Output = Option<
-        impl effect_lite_futures::EffectAsync<MockNetworkServer, FutureOutput = AppStateEffect>,
+        impl effect_lite_futures::EffectAsync<MockNetworkServer, FutureOutput = AppStateEffect>
+            + 'static,
     >;
     fn resolve(self, dependency: &mut AppState) -> Self::Output {
         match self {
@@ -77,9 +78,9 @@ mod subcomponent {
     impl effect_lite::Effect<&mut SubComponentState> for SubComponentStateEffect {
         type Output = Option<
             impl effect_lite_futures::EffectAsync<
-                MockNetworkServer,
-                FutureOutput = SubComponentStateEffect,
-            >,
+                    MockNetworkServer,
+                    FutureOutput = SubComponentStateEffect,
+                > + 'static,
         >;
         fn resolve(self, dependency: &mut SubComponentState) -> Self::Output {
             match self.inner {
@@ -159,11 +160,13 @@ async fn main() {
         tokio::select! {
             Some(event) = event => {
                 let effect = map_event(event);
-                if let Some(out) = effect.resolve(&mut app) {
-                    if let Some(out) = out.resolve(&mut app.state) {
-                        executor.push_clone(out.into_stream_effect(), allocator_api2::alloc::System)
-                    }
-                }
+                let Some(out) = effect.resolve(&mut app) else {
+                    continue;
+                };
+                let Some(out) = out.resolve(&mut app.state) else {
+                    continue;
+                };
+                executor.push_clone(out.into_stream_effect(), allocator_api2::alloc::System)
             }
         };
     }
