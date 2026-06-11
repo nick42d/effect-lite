@@ -36,8 +36,7 @@ enum AppStateEffect {
 
 impl effect_lite::Effect<&mut AppState> for AppStateEffect {
     type Output = Option<
-        impl effect_lite_futures::EffectAsync<MockNetworkServer, FutureOutput = AppStateEffect>
-            + 'static,
+        impl effect_lite_futures::EffectAsync<MockNetworkServer, FutureOutput = AppStateEffect> + use<>,
     >;
     fn resolve(self, dependency: &mut AppState) -> Self::Output {
         match self {
@@ -47,12 +46,23 @@ impl effect_lite::Effect<&mut AppState> for AppStateEffect {
                 None
             }
             AppStateEffect::Subcomponent0Effect(sub_component_state_effect) => {
-                let tbc = sub_component_state_effect
+                let out = sub_component_state_effect
                     .resolve(&mut dependency.subcomponent_0)
-                    .map(|ef| ef.map_async_output(|out| AppStateEffect::Subcomponent0Effect(out)));
-                tbc
+                    .map(|ef| {
+                        ef.map_async_output(|out| AppStateEffect::Subcomponent0Effect(out))
+                            .to_left()
+                    });
+                out
             }
-            AppStateEffect::Subcomponent1Effect(sub_component_state_effect) => todo!(),
+            AppStateEffect::Subcomponent1Effect(sub_component_state_effect) => {
+                let out = sub_component_state_effect
+                    .resolve(&mut dependency.subcomponent_0)
+                    .map(|ef| {
+                        ef.map_async_output(|out| AppStateEffect::Subcomponent0Effect(out))
+                            .to_right()
+                    });
+                out
+            }
         }
     }
 }
@@ -80,7 +90,7 @@ mod subcomponent {
             impl effect_lite_futures::EffectAsync<
                     MockNetworkServer,
                     FutureOutput = SubComponentStateEffect,
-                > + 'static,
+                > + use<>,
         >;
         fn resolve(self, dependency: &mut SubComponentState) -> Self::Output {
             match self.inner {
@@ -152,6 +162,7 @@ async fn main() {
 
     loop {
         if app.exiting {
+            println!("Exiting!\r");
             break;
         }
 
@@ -168,7 +179,22 @@ async fn main() {
                 };
                 executor.push_clone(out.into_stream_effect(), allocator_api2::alloc::System)
             }
+            Some(output) = executor.get_next() => {
+                match output {
+                    effect_lite_executor::EffectOutput::Finished { task_id, task_type_name, task_type_id } => {
+                        println!("Task finished! ID: {}, Type: {}, TypeID: {:?}\r", task_id, task_type_name, task_type_id);
+                    },
+                    effect_lite_executor::EffectOutput::Continuing { task_id, task_type_name, task_type_id, output_n, output } => {
+                        println!("Task continuing! Output item number: {}, ID: {}, Type: {}, TypeID: {:?}\r", output_n, task_id, task_type_name, task_type_id);
+                        let Some(out) = output.resolve(&mut app.state) else {
+                            continue;
+                        };
+                        executor.push_clone(out.into_stream_effect(), allocator_api2::alloc::System)
+                    },
+                }
+            }
         };
+        println!("State is {:?}\n", app.state);
     }
 
     crossterm::terminal::disable_raw_mode().unwrap();
@@ -191,20 +217,11 @@ impl Effect<&mut App> for AppEffect {
             AppEffect::CPressed => println!("'c' pressed\r"),
             AppEffect::APressed => {
                 println!("'a' pressed\r");
-                // match state.selected_component {
-                //             0 => {
-                //                 if let Some(effect) = AppStateEffect::Subcomponent0Effect(
-                //                     SubComponentStateEffect { inner: crate::subcomponent::SubComponentStateEffectInner::GetAnimalAndReplaceText }
-                //                     )
-                //                     .resolve(&mut state)
-                //                 {
-                //                         effect.resolve(server.clone()).await.resolve(&mut state);
-                //                 }
-                //             },
-                //             1 => todo!(),
-                //             _ => panic!("Invalid subcomponent"),
-                //         };
-                todo!()
+                match dependency.state.selected_component {
+                    0 => return Some(AppStateEffect::Subcomponent0Effect(SubComponentStateEffect { inner: crate::subcomponent::SubComponentStateEffectInner::GetAnimalAndReplaceText })),
+                    1 => return Some(AppStateEffect::Subcomponent1Effect(SubComponentStateEffect { inner: crate::subcomponent::SubComponentStateEffectInner::GetAnimalAndReplaceText })),
+                    _ => panic!("Invalid subcomponent"),
+                }
             }
             AppEffect::ZeroPressed => {
                 println!("'0' pressed\r");

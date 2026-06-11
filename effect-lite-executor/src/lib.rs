@@ -258,7 +258,7 @@ impl<'a, T, A: Allocator> futures::Future for GetNext<'a, T, A> {
                         output,
                     }));
                 }
-                Poll::Pending => (),
+                Poll::Pending => return Poll::Pending,
             }
         }
         Poll::Ready(None)
