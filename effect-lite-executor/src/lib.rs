@@ -76,6 +76,8 @@ struct ExecutorItem<T, A: Allocator> {
     task_id: u64,
     task_type_name: &'static str,
     task_type_id: TypeId,
+    max_hint: Option<usize>,
+    min_hint: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -90,6 +92,8 @@ pub enum EffectOutput<T> {
         task_type_name: &'static str,
         task_type_id: TypeId,
         output_n: usize,
+        output_max_rem_hint: Option<usize>,
+        output_min_rem_hint: usize,
         output: T,
     },
 }
@@ -141,11 +145,14 @@ impl<E, T, A: Allocator + 'static, D> Executor<E, T, D, A> {
                 stream.enumerate().map(|(idx, item)| Enumerated(idx, item)),
                 alloc,
             ));
+        let (min_hint, max_hint) = stream.size_hint();
         self.task_list.push(ExecutorItem {
             stream: Pin::from(stream),
             task_id,
             task_type_name,
             task_type_id,
+            min_hint,
+            max_hint,
         })
     }
     pub fn push_ref<S>(&mut self, effect: E, alloc: A)
@@ -165,11 +172,14 @@ impl<E, T, A: Allocator + 'static, D> Executor<E, T, D, A> {
                 stream.enumerate().map(|(idx, item)| Enumerated(idx, item)),
                 alloc,
             ));
+        let (min_hint, max_hint) = stream.size_hint();
         self.task_list.push(ExecutorItem {
             stream: Pin::from(stream),
             task_id,
             task_type_name,
             task_type_id,
+            min_hint,
+            max_hint,
         })
     }
     pub fn push_mut<S>(&mut self, effect: E, alloc: A)
@@ -189,11 +199,14 @@ impl<E, T, A: Allocator + 'static, D> Executor<E, T, D, A> {
                 stream.enumerate().map(|(idx, item)| Enumerated(idx, item)),
                 alloc,
             ));
+        let (min_hint, max_hint) = stream.size_hint();
         self.task_list.push(ExecutorItem {
             stream: Pin::from(stream),
             task_id,
             task_type_name,
             task_type_id,
+            min_hint,
+            max_hint,
         })
     }
     pub fn get_next(&mut self) -> GetNext<T, A> {
@@ -226,12 +239,13 @@ impl<'a, T, A: Allocator> futures::Future for GetNext<'a, T, A> {
             // TODO: Tests for poll order
             *self.last_polled += 1;
             let adj_idx = (idx + *self.last_polled) % len;
-            let mut stream = self
+            let item = self
                 .items
                 .get_mut(adj_idx)
-                .expect("adj_idx should be within bounds since it's modulod with len")
-                .stream
-                .as_mut();
+                .expect("adj_idx should be within bounds since it's modulod with len");
+            let min_hint = item.min_hint;
+            let max_hint = item.max_hint;
+            let mut stream = item.stream.as_mut();
             match futures::stream::Stream::poll_next(stream.as_mut(), cx) {
                 Poll::Ready(Option::None) => {
                     // NOPANIC: len checked above
@@ -256,6 +270,9 @@ impl<'a, T, A: Allocator> futures::Future for GetNext<'a, T, A> {
                         task_type_id,
                         output_n,
                         output,
+                        output_max_rem_hint: max_hint
+                            .map(|max_hint| max_hint.saturating_sub(output_n + 1)),
+                        output_min_rem_hint: min_hint.saturating_sub(output_n + 1),
                     }));
                 }
                 Poll::Pending => return Poll::Pending,

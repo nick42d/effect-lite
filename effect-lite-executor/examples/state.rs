@@ -26,10 +26,22 @@ struct AppState {
     subcomponent_1: subcomponent::SubComponentState,
 }
 
+#[derive(Debug)]
 enum AppStateEffect {
     ChangeSubcomponent(usize),
     Subcomponent0Effect(subcomponent::SubComponentStateEffect),
     Subcomponent1Effect(subcomponent::SubComponentStateEffect),
+}
+struct IntoSubcomponentEffect(usize);
+impl Effect<SubComponentStateEffect> for IntoSubcomponentEffect {
+    type Output = AppStateEffect;
+    fn resolve(self, dependency: SubComponentStateEffect) -> Self::Output {
+        match self.0 {
+            0 => AppStateEffect::Subcomponent0Effect(dependency),
+            1 => AppStateEffect::Subcomponent1Effect(dependency),
+            _ => unimplemented!(),
+        }
+    }
 }
 
 impl effect_lite::Effect<&mut AppState> for AppStateEffect {
@@ -46,19 +58,13 @@ impl effect_lite::Effect<&mut AppState> for AppStateEffect {
             AppStateEffect::Subcomponent0Effect(sub_component_state_effect) => {
                 let out = sub_component_state_effect
                     .resolve(&mut dependency.subcomponent_0)
-                    .map(|ef| {
-                        ef.map_async_output(|out| AppStateEffect::Subcomponent0Effect(out))
-                            .to_left_async()
-                    });
+                    .map(|ef| ef.async_then(IntoSubcomponentEffect(0)));
                 out
             }
             AppStateEffect::Subcomponent1Effect(sub_component_state_effect) => {
                 let out = sub_component_state_effect
                     .resolve(&mut dependency.subcomponent_1)
-                    .map(|ef| {
-                        ef.map_async_output(|out| AppStateEffect::Subcomponent1Effect(out))
-                            .to_right_async()
-                    });
+                    .map(|ef| ef.async_then(IntoSubcomponentEffect(1)));
                 out
             }
         }
@@ -75,10 +81,12 @@ mod subcomponent {
         subcomponent_counter: usize,
     }
     impl SubComponentState {}
+    #[derive(Debug)]
     pub struct SubComponentStateEffect {
         pub(crate) inner: SubComponentStateEffectInner,
     }
     /// Hidden inner so that SubComponentStateEffect cannot be constructed outside this module.
+    #[derive(Debug)]
     pub enum SubComponentStateEffectInner {
         ReplaceText(String),
         GetAnimalAndReplaceText,
@@ -114,15 +122,10 @@ mod subcomponent {
     }
 }
 
-struct StdoutPrinter;
-impl StdoutPrinter {
-    fn println(s: impl std::fmt::Display) {
-        println!("{s}");
-    }
-}
 enum MockNetworkServerEffect {
     GetAnimal,
 }
+
 impl effect_lite::Effect<MockNetworkServer> for MockNetworkServerEffect {
     type Output = impl Future<Output = String>;
     fn resolve(self, dependency: MockNetworkServer) -> Self::Output {
@@ -176,21 +179,18 @@ async fn main() {
         tokio::select! {
             Some(event) = event => {
                 let effect = map_event(event);
-                let Some(out) = effect.resolve(&mut app) else {
-                    continue;
+                if let Some(out) = effect.resolve(&mut app) {
+                    if let Some(out) = out.resolve(&mut app.state) {
+                        executor.push_clone(out.into_stream_effect(), allocator_api2::alloc::System)
+                    };
                 };
-                let Some(out) = out.resolve(&mut app.state) else {
-                    continue;
-                };
-                executor.push_clone(out.into_stream_effect(), allocator_api2::alloc::System)
             }
             Some(output) = executor.get_next() => {
+                println!("{output:?}\r");
                 match output {
-                    effect_lite_executor::EffectOutput::Finished { task_id, task_type_name, task_type_id } => {
-                        println!("Task finished! ID: {}, Type: {}, TypeID: {:?}\r", task_id, task_type_name, task_type_id);
+                    effect_lite_executor::EffectOutput::Finished {..} => {
                     },
-                    effect_lite_executor::EffectOutput::Continuing { task_id, task_type_name, task_type_id, output_n, output } => {
-                        println!("Task continuing! Output item number: {}, ID: {}, Type: {}, TypeID: {:?}\r", output_n, task_id, task_type_name, task_type_id);
+                    effect_lite_executor::EffectOutput::Continuing { output, .. } => {
                         let Some(out) = output.resolve(&mut app.state) else {
                             continue;
                         };
@@ -199,7 +199,7 @@ async fn main() {
                 }
             }
         };
-        println!("State is {:?}\n", app.state);
+        println!("State is {:?}\r", app.state);
     }
 
     crossterm::terminal::disable_raw_mode().unwrap();
@@ -225,7 +225,7 @@ impl Effect<&mut App> for AppEffect {
                 match dependency.state.selected_component {
                     0 => return Some(AppStateEffect::Subcomponent0Effect(SubComponentStateEffect { inner: crate::subcomponent::SubComponentStateEffectInner::GetAnimalAndReplaceText })),
                     1 => return Some(AppStateEffect::Subcomponent1Effect(SubComponentStateEffect { inner: crate::subcomponent::SubComponentStateEffectInner::GetAnimalAndReplaceText })),
-                    _ => panic!("Invalid subcomponent"),
+                    _ => unimplemented!("Invalid subcomponent"),
                 }
             }
             AppEffect::ZeroPressed => {
